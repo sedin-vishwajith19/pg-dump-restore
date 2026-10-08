@@ -16,7 +16,7 @@ pipeline {
         string(
             name: 'RESTORE_DUMP_FILE',
             defaultValue: '',
-            description: '[RESTORE] Or specify an existing dump filename/path'
+            description: '[RESTORE] Or specify an existing dump filename/path (e.g. dumps/my_backup.dump)'
         )
 
         string(
@@ -88,16 +88,32 @@ pipeline {
                     script {
                         def fileToRestore = ""
 
-                        if (fileExists('DUMP_FILE_UPLOAD')) {
-                            echo "Found uploaded file."
-                            sh "mkdir -p dumps && mv DUMP_FILE_UPLOAD dumps/uploaded.dump"
-                            fileToRestore = "dumps/uploaded.dump"
+                        // Check 1: File Parameter object or workspace file
+                        if (params.DUMP_FILE_UPLOAD && fileExists(params.DUMP_FILE_UPLOAD.toString())) {
+                            fileToRestore = params.DUMP_FILE_UPLOAD.toString()
+                            echo "Found uploaded file at: ${fileToRestore}"
+                        } else if (fileExists('DUMP_FILE_UPLOAD')) {
+                            fileToRestore = 'DUMP_FILE_UPLOAD'
+                            echo "Found uploaded file 'DUMP_FILE_UPLOAD' in workspace."
                         } else if (params.RESTORE_DUMP_FILE && params.RESTORE_DUMP_FILE.trim() != '') {
                             fileToRestore = params.RESTORE_DUMP_FILE.trim()
+                            echo "Using specified RESTORE_DUMP_FILE: ${fileToRestore}"
                         } else {
-                            error("Please upload a file or specify RESTORE_DUMP_FILE!")
+                            // Check 4: Look for any .dump file in workspace or dumps folder
+                            def foundFiles = sh(
+                                script: 'find . -maxdepth 2 -name "*.dump" ! -name "pre_restore_safety_*.dump" | head -n 1',
+                                returnStdout: true
+                            ).trim()
+
+                            if (foundFiles != '') {
+                                fileToRestore = foundFiles
+                                echo "Auto-detected dump file in workspace: ${fileToRestore}"
+                            } else {
+                                error("No dump file found! Please upload a file (DUMP_FILE_UPLOAD) or specify RESTORE_DUMP_FILE parameter.")
+                            }
                         }
 
+                        echo "Executing restore with file: ${fileToRestore}"
                         sh "chmod +x restore.sh && ./restore.sh '${fileToRestore}'"
                     }
                 }

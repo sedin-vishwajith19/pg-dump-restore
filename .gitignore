@@ -1,0 +1,14 @@
+# Dumps and temporary files
+*.dump
+dumps/
+*.sql
+*.tar
+*.gz
+
+# IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+
+# Jenkins temporary workspace files
+*.log

@@ -8,7 +8,6 @@ pipeline {
             description: 'Select action: DUMP (Backup DB & download artifact) or RESTORE (Restore DB onto server)'
         )
 
-        // Upload custom dump file from developer laptop
         file(
             name: 'DUMP_FILE_UPLOAD',
             description: '[RESTORE ACTION] Choose and upload a .dump file from your computer (Optional: leave empty if using RESTORE_DUMP_FILE)'
@@ -26,41 +25,46 @@ pipeline {
             description: 'Jenkins Credential ID containing SSH Key for target database server'
         )
 
-        // Server and Docker parameters
         string(
             name: 'SERVER_HOST',
             defaultValue: '98.70.45.119',
-            description: 'Target DB Server IP address (accessible from Jenkins)'
+            description: 'Target DB Server IP address'
         )
+
         string(
             name: 'SERVER_USER',
             defaultValue: 'deployer',
-            description: 'SSH user on the target DB server'
+            description: 'SSH user on target DB server'
         )
+
         string(
             name: 'CONTAINER_NAME',
             defaultValue: 'landmark-db',
             description: 'Docker container name running PostgreSQL'
         )
+
         string(
             name: 'DB_NAME',
             defaultValue: 'postgres_local',
             description: 'PostgreSQL database name'
         )
+
         string(
             name: 'DB_USER',
             defaultValue: 'postgres_local',
             description: 'PostgreSQL database user'
         )
+
         string(
             name: 'REMOTE_DUMPS_PATH',
             defaultValue: '/var/www/dkapp/DS_audit/dumps',
             description: 'Directory path on remote server for dump storage'
         )
+
         booleanParam(
             name: 'TAKE_SAFETY_SNAPSHOT',
             defaultValue: true,
-            description: 'Take automatic safety snapshot of database before restoring'
+            description: 'Take automatic safety snapshot before restoring'
         )
     }
 
@@ -71,7 +75,6 @@ pipeline {
     options {
         timeout(time: 1, unit: 'HOURS')
         buildDiscarder(logRotator(numToKeepStr: '30'))
-        ansiColor('xterm')
     }
 
     stages {
@@ -96,7 +99,7 @@ pipeline {
                 expression { return params.ACTION == 'DUMP' }
             }
             steps {
-                sshagent([params.SSH_CREDENTIALS_ID]) {
+                withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY_PATH')]) {
                     script {
                         echo "Starting DB Dump operation..."
                         sh """
@@ -127,11 +130,10 @@ pipeline {
                 expression { return params.ACTION == 'RESTORE' }
             }
             steps {
-                sshagent([params.SSH_CREDENTIALS_ID]) {
+                withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY_PATH')]) {
                     script {
                         def fileToRestore = ""
 
-                        // Check if developer uploaded a file directly via Jenkins File Parameter
                         if (fileExists('DUMP_FILE_UPLOAD')) {
                             echo "Detected uploaded dump file from developer."
                             sh "mkdir -p dumps && mv DUMP_FILE_UPLOAD dumps/uploaded_restore.dump"

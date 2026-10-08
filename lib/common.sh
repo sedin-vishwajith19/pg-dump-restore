@@ -31,10 +31,17 @@ load_config() {
     else
         log_warn "Config file '${config_file}' not found. Using default environment variables."
     fi
+
+    # Append SSH key option if SSH_KEY_PATH environment variable is provided by Jenkins withCredentials
+    if [ -n "${SSH_KEY_PATH:-}" ] && [ -f "${SSH_KEY_PATH:-}" ]; then
+        SSH_OPTS="-i ${SSH_KEY_PATH} ${SSH_OPTS:- -o StrictHostKeyChecking=no -o ConnectTimeout=10}"
+    else
+        SSH_OPTS="${SSH_OPTS:- -o StrictHostKeyChecking=no -o ConnectTimeout=10}"
+    fi
 }
 
 check_ssh_connection() {
-    log_info "Testing SSH connection from Jenkins to ${SERVER_USER}@${SERVER_HOST}..."
+    log_info "Testing SSH connection to ${SERVER_USER}@${SERVER_HOST}..."
     if ! ssh ${SSH_OPTS} "${SERVER_USER}@${SERVER_HOST}" "echo ok" >/dev/null 2>&1; then
         log_error "Unable to connect to ${SERVER_USER}@${SERVER_HOST} via SSH."
         log_error "Please check Jenkins SSH Credentials or Firewall configuration."
@@ -55,7 +62,6 @@ check_remote_container() {
     log_success "Container '${container_name}' is active and running."
 }
 
-# Takes a quick safety snapshot before executing restore
 take_safety_snapshot() {
     local container_name="$1"
     local db_user="$2"

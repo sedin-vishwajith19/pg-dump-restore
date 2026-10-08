@@ -40,7 +40,12 @@ execute_remote_restore() {
     # Upload dump file if present locally (in Jenkins workspace)
     if [ -f "$dump_file" ]; then
         log_info "Transferring dump file from Jenkins workspace to target server..."
-        rsync -avz --progress -e "ssh ${SSH_OPTS}" "$dump_file" "${SERVER_USER}@${SERVER_HOST}:${dumps_path}/${dump_filename}"
+        if command -v rsync >/dev/null 2>&1; then
+            rsync -avz --progress -e "ssh ${SSH_OPTS}" "$dump_file" "${SERVER_USER}@${SERVER_HOST}:${dumps_path}/${dump_filename}"
+        else
+            log_info "rsync not found locally; using scp for file transfer..."
+            scp ${SSH_OPTS} "$dump_file" "${SERVER_USER}@${SERVER_HOST}:${dumps_path}/${dump_filename}"
+        fi
         log_success "Transfer complete."
     else
         log_info "File '${dump_file}' not found locally; verifying existence on remote server..."

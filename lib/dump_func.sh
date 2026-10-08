@@ -61,7 +61,14 @@ REMOTE
     if [ -n "${LOCAL_DUMP_DIR:-}" ]; then
         log_info "Fetching dump file to Jenkins workspace directory (${LOCAL_DUMP_DIR})..."
         mkdir -p "${LOCAL_DUMP_DIR}"
-        rsync -avz --progress -e "ssh ${SSH_OPTS}" "${SERVER_USER}@${SERVER_HOST}:${dumps_path}/${dump_filename}" "${LOCAL_DUMP_DIR}/${dump_filename}"
+
+        if command -v rsync >/dev/null 2>&1; then
+            rsync -avz --progress -e "ssh ${SSH_OPTS}" "${SERVER_USER}@${SERVER_HOST}:${dumps_path}/${dump_filename}" "${LOCAL_DUMP_DIR}/${dump_filename}"
+        else
+            log_info "rsync not found locally; using scp for file transfer..."
+            scp ${SSH_OPTS} "${SERVER_USER}@${SERVER_HOST}:${dumps_path}/${dump_filename}" "${LOCAL_DUMP_DIR}/${dump_filename}"
+        fi
+
         log_success "Dump saved locally at: ${LOCAL_DUMP_DIR}/${dump_filename}"
     fi
 

@@ -71,7 +71,6 @@ pipeline {
     options {
         timeout(time: 1, unit: 'HOURS')
         buildDiscarder(logRotator(numToKeepStr: '30'))
-        ansiColor('xterm')
     }
 
     stages {
@@ -131,7 +130,6 @@ pipeline {
                     script {
                         def fileToRestore = ""
 
-                        // Check if developer uploaded a file directly via Jenkins File Parameter
                         if (fileExists('DUMP_FILE_UPLOAD')) {
                             echo "Detected uploaded dump file from developer."
                             sh "mkdir -p dumps && mv DUMP_FILE_UPLOAD dumps/uploaded_restore.dump"

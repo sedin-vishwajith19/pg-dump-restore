@@ -5,66 +5,60 @@ pipeline {
         choice(
             name: 'ACTION',
             choices: ['DUMP', 'RESTORE'],
-            description: 'Select action: DUMP (Backup DB & download artifact) or RESTORE (Restore DB onto server)'
+            description: 'Choose DUMP to backup database or RESTORE to restore database'
         )
 
         file(
             name: 'DUMP_FILE_UPLOAD',
-            description: '[RESTORE ACTION] Choose and upload a .dump file from your computer (Optional: leave empty if using RESTORE_DUMP_FILE)'
+            description: '[RESTORE] Upload a .dump file from your local computer'
         )
 
         string(
             name: 'RESTORE_DUMP_FILE',
             defaultValue: '',
-            description: '[RESTORE ACTION] Or specify existing dump filename/path (e.g. dumps/postgres_local_20261008_112000.dump)'
+            description: '[RESTORE] Or specify an existing dump filename/path'
         )
 
         string(
             name: 'SSH_CREDENTIALS_ID',
             defaultValue: 'db-server-ssh-key',
-            description: 'Jenkins Credential ID containing SSH Key for target database server'
+            description: 'Jenkins SSH credential ID'
         )
 
         string(
             name: 'SERVER_HOST',
             defaultValue: '98.70.45.119',
-            description: 'Target DB Server IP address'
+            description: 'Target database server IP'
         )
 
         string(
             name: 'SERVER_USER',
             defaultValue: 'deployer',
-            description: 'SSH user on target DB server'
+            description: 'SSH username'
         )
 
         string(
             name: 'CONTAINER_NAME',
             defaultValue: 'landmark-db',
-            description: 'Docker container name running PostgreSQL'
+            description: 'PostgreSQL Docker container name'
         )
 
         string(
             name: 'DB_NAME',
             defaultValue: 'postgres_local',
-            description: 'PostgreSQL database name'
+            description: 'Database name'
         )
 
         string(
             name: 'DB_USER',
             defaultValue: 'postgres_local',
-            description: 'PostgreSQL database user'
+            description: 'Database user'
         )
 
         string(
             name: 'REMOTE_DUMPS_PATH',
             defaultValue: '/var/www/dkapp/DS_audit/dumps',
-            description: 'Directory path on remote server for dump storage'
-        )
-
-        booleanParam(
-            name: 'TAKE_SAFETY_SNAPSHOT',
-            defaultValue: true,
-            description: 'Take automatic safety snapshot before restoring'
+            description: 'Remote dumps path'
         )
     }
 
@@ -72,60 +66,20 @@ pipeline {
         LOCAL_DUMP_DIR = "${WORKSPACE}/dumps"
     }
 
-    options {
-        timeout(time: 1, unit: 'HOURS')
-        buildDiscarder(logRotator(numToKeepStr: '30'))
-    }
-
     stages {
-        stage('Initialize & Prepare') {
-            steps {
-                script {
-                    echo "============================================================"
-                    echo " Jenkins Database Self-Service Pipeline"
-                    echo " Pipeline Action     : ${params.ACTION}"
-                    echo " Target Server Host  : ${params.SERVER_USER}@${params.SERVER_HOST}"
-                    echo " Target Container    : ${params.CONTAINER_NAME}"
-                    echo " Target Database     : ${params.DB_NAME}"
-                    echo "============================================================"
-
-                    sh "chmod +x dump-db.sh restore-db.sh lib/*.sh"
-                }
-            }
-        }
-
-        stage('Execute Database Dump') {
+        stage('Dump Database') {
             when {
                 expression { return params.ACTION == 'DUMP' }
             }
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY_PATH')]) {
-                    script {
-                        echo "Starting DB Dump operation..."
-                        sh """
-                            ./dump-db.sh \
-                                --host "${params.SERVER_HOST}" \
-                                --user "${params.SERVER_USER}" \
-                                --container "${params.CONTAINER_NAME}" \
-                                --dbname "${params.DB_NAME}" \
-                                --dbuser "${params.DB_USER}" \
-                                --dumps-path "${params.REMOTE_DUMPS_PATH}" \
-                                --local-dir "${env.LOCAL_DUMP_DIR}"
-                        """
-                    }
+                    sh "chmod +x dump.sh && ./dump.sh"
                 }
-            }
-            post {
-                success {
-                    script {
-                        echo "Archiving dump files as Jenkins artifacts for developer download..."
-                        archiveArtifacts artifacts: 'dumps/*.dump', allowEmptyArchive: false, fingerprint: true
-                    }
-                }
+                archiveArtifacts artifacts: 'dumps/*.dump', allowEmptyArchive: false
             }
         }
 
-        stage('Execute Database Restore') {
+        stage('Restore Database') {
             when {
                 expression { return params.ACTION == 'RESTORE' }
             }
@@ -135,44 +89,19 @@ pipeline {
                         def fileToRestore = ""
 
                         if (fileExists('DUMP_FILE_UPLOAD')) {
-                            echo "Detected uploaded dump file from developer."
-                            sh "mkdir -p dumps && mv DUMP_FILE_UPLOAD dumps/uploaded_restore.dump"
-                            fileToRestore = "dumps/uploaded_restore.dump"
+                            echo "Found uploaded file."
+                            sh "mkdir -p dumps && mv DUMP_FILE_UPLOAD dumps/uploaded.dump"
+                            fileToRestore = "dumps/uploaded.dump"
                         } else if (params.RESTORE_DUMP_FILE && params.RESTORE_DUMP_FILE.trim() != '') {
                             fileToRestore = params.RESTORE_DUMP_FILE.trim()
                         } else {
-                            error("Please either upload a dump file (DUMP_FILE_UPLOAD) or specify RESTORE_DUMP_FILE parameter!")
+                            error("Please upload a file or specify RESTORE_DUMP_FILE!")
                         }
 
-                        echo "Starting DB Restore operation using file: ${fileToRestore}..."
-                        def safetyFlag = params.TAKE_SAFETY_SNAPSHOT ? "" : "--no-safety"
-
-                        sh """
-                            ./restore-db.sh \
-                                --host "${params.SERVER_HOST}" \
-                                --user "${params.SERVER_USER}" \
-                                --container "${params.CONTAINER_NAME}" \
-                                --dbname "${params.DB_NAME}" \
-                                --dbuser "${params.DB_USER}" \
-                                --dumps-path "${params.REMOTE_DUMPS_PATH}" \
-                                ${safetyFlag} \
-                                "${fileToRestore}"
-                        """
+                        sh "chmod +x restore.sh && ./restore.sh '${fileToRestore}'"
                     }
                 }
             }
-        }
-    }
-
-    post {
-        always {
-            echo "Pipeline run completed."
-        }
-        success {
-            echo "Self-service database operation completed successfully!"
-        }
-        failure {
-            echo "Operation failed. Please review execution log above."
         }
     }
 }

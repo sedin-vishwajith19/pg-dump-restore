@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DUMP_FILE="${1:-}"
+SCRIPT_OR_DUMP_FILE="${1:-}"
 
-if [ -z "$DUMP_FILE" ]; then
-  echo "Error: No dump file specified!"
-  echo "Usage: $0 <dump_file_path>"
+if [ -z "$SCRIPT_OR_DUMP_FILE" ]; then
+  echo "Error: No file specified!"
+  echo "Usage: $0 <file.sql_or_dump>"
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# If it is a SQL or SH script, run it via run-script.sh
+if [[ "$SCRIPT_OR_DUMP_FILE" == *.sql || "$SCRIPT_OR_DUMP_FILE" == *.sh ]]; then
+  "${SCRIPT_DIR}/run-script.sh" "$SCRIPT_OR_DUMP_FILE"
+  exit 0
+fi
+
+# Otherwise, handle as full pg_restore dump file
 SERVER_USER="${SERVER_USER:-deployer}"
 SERVER_HOST="${SERVER_HOST:-98.70.45.119}"
 CONTAINER_NAME="${CONTAINER_NAME:-landmark-db}"
@@ -22,19 +31,17 @@ if [ -n "${SSH_KEY_PATH:-}" ] && [ -f "${SSH_KEY_PATH:-}" ]; then
 fi
 
 SSH_OPTS="${SSH_KEY_ARG} -o StrictHostKeyChecking=no -o ConnectTimeout=10"
-DUMP_FILENAME=$(basename "$DUMP_FILE")
+DUMP_FILENAME=$(basename "$SCRIPT_OR_DUMP_FILE")
 
-echo "==> [1/3] Ensuring remote dumps path exists..."
+echo "==> Ensuring remote dumps path exists..."
 ssh ${SSH_OPTS} "${SERVER_USER}@${SERVER_HOST}" "mkdir -p '${DUMPS_PATH}'"
 
-if [ -f "$DUMP_FILE" ]; then
-  echo "==> [2/3] Uploading local dump file '${DUMP_FILE}' to server..."
-  scp ${SSH_OPTS} "$DUMP_FILE" "${SERVER_USER}@${SERVER_HOST}:${DUMPS_PATH}/${DUMP_FILENAME}"
-else
-  echo "==> [2/3] Using existing dump file on server: ${DUMPS_PATH}/${DUMP_FILENAME}"
+if [ -f "$SCRIPT_OR_DUMP_FILE" ]; then
+  echo "==> Uploading local dump file '${SCRIPT_OR_DUMP_FILE}' to server..."
+  scp ${SSH_OPTS} "$SCRIPT_OR_DUMP_FILE" "${SERVER_USER}@${SERVER_HOST}:${DUMPS_PATH}/${DUMP_FILENAME}"
 fi
 
-echo "==> [3/3] Restoring database inside container '${CONTAINER_NAME}'..."
+echo "==> Restoring database inside container '${CONTAINER_NAME}'..."
 ssh ${SSH_OPTS} "${SERVER_USER}@${SERVER_HOST}" bash -s -- \
   "$CONTAINER_NAME" "$DB_USER" "$DB_NAME" "$DUMP_FILENAME" <<'REMOTE'
 set -euo pipefail
@@ -43,7 +50,6 @@ DB_USER="$2"
 DB_NAME="$3"
 DUMP_FILENAME="$4"
 
-echo "Running pg_restore inside container '${CONTAINER_NAME}'..."
 docker exec -i "${CONTAINER_NAME}" pg_restore \
   -U "${DB_USER}" \
   -d "${DB_NAME}" \
@@ -52,12 +58,10 @@ docker exec -i "${CONTAINER_NAME}" pg_restore \
   --no-owner \
   --no-privileges \
   "/dumps/${DUMP_FILENAME}" || {
-    echo "Notice: pg_restore finished (warnings/notices are normal)."
+    echo "Notice: pg_restore completed with warnings/notices."
   }
 
-echo "Verifying restored schema tables..."
 docker exec -i "${CONTAINER_NAME}" psql -U "${DB_USER}" -d "${DB_NAME}" -c "\dt landmark.*" || true
-echo "Database restore finished!"
 REMOTE
 
 echo "==> Restore completed successfully!"

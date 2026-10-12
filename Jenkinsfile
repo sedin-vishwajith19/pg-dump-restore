@@ -4,19 +4,25 @@ pipeline {
     parameters {
         choice(
             name: 'ACTION',
-            choices: ['DUMP', 'RESTORE'],
-            description: 'Choose DUMP to backup database or RESTORE to restore database'
+            choices: ['DUMP', 'RUN_SCRIPT'],
+            description: 'Choose DUMP to backup database OR RUN_SCRIPT to execute a SQL script in the container'
         )
 
         file(
-            name: 'DUMP_FILE_UPLOAD',
-            description: '[RESTORE] Upload a .dump file from your local computer'
+            name: 'SCRIPT_FILE_UPLOAD',
+            description: '[RUN_SCRIPT] Upload a .sql script file from your computer'
+        )
+
+        text(
+            name: 'SQL_QUERY_OR_SCRIPT',
+            defaultValue: '',
+            description: '[RUN_SCRIPT] Or paste raw SQL queries/commands directly here (Leave empty if uploading a file)'
         )
 
         string(
-            name: 'RESTORE_DUMP_FILE',
+            name: 'SCRIPT_FILE_PATH',
             defaultValue: '',
-            description: '[RESTORE] Or specify an existing dump filename/path (e.g. dumps/my_backup.dump)'
+            description: '[RUN_SCRIPT] Or specify a script filename/path in workspace'
         )
 
         string(
@@ -79,42 +85,50 @@ pipeline {
             }
         }
 
-        stage('Restore Database') {
+        stage('Execute Script in Database Container') {
             when {
-                expression { return params.ACTION == 'RESTORE' }
+                expression { return params.ACTION == 'RUN_SCRIPT' || params.ACTION == 'RESTORE' }
             }
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY_PATH')]) {
                     script {
-                        def fileToRestore = ""
+                        def scriptToRun = ""
 
-                        // Check 1: File Parameter object or workspace file
-                        if (params.DUMP_FILE_UPLOAD && fileExists(params.DUMP_FILE_UPLOAD.toString())) {
-                            fileToRestore = params.DUMP_FILE_UPLOAD.toString()
-                            echo "Found uploaded file at: ${fileToRestore}"
+                        // 1. Check if user typed or pasted SQL query/script in text parameter
+                        if (params.SQL_QUERY_OR_SCRIPT && params.SQL_QUERY_OR_SCRIPT.trim() != '') {
+                            echo "Detected inline SQL text. Writing to custom_query.sql..."
+                            writeFile file: 'custom_query.sql', text: params.SQL_QUERY_OR_SCRIPT.trim()
+                            scriptToRun = 'custom_query.sql'
+                        }
+                        // 2. Check if a script file was uploaded
+                        else if (params.SCRIPT_FILE_UPLOAD && fileExists(params.SCRIPT_FILE_UPLOAD.toString())) {
+                            scriptToRun = params.SCRIPT_FILE_UPLOAD.toString()
+                        } else if (fileExists('SCRIPT_FILE_UPLOAD')) {
+                            scriptToRun = 'SCRIPT_FILE_UPLOAD'
                         } else if (fileExists('DUMP_FILE_UPLOAD')) {
-                            fileToRestore = 'DUMP_FILE_UPLOAD'
-                            echo "Found uploaded file 'DUMP_FILE_UPLOAD' in workspace."
+                            scriptToRun = 'DUMP_FILE_UPLOAD'
+                        }
+                        // 3. Check if script path was provided
+                        else if (params.SCRIPT_FILE_PATH && params.SCRIPT_FILE_PATH.trim() != '') {
+                            scriptToRun = params.SCRIPT_FILE_PATH.trim()
                         } else if (params.RESTORE_DUMP_FILE && params.RESTORE_DUMP_FILE.trim() != '') {
-                            fileToRestore = params.RESTORE_DUMP_FILE.trim()
-                            echo "Using specified RESTORE_DUMP_FILE: ${fileToRestore}"
+                            scriptToRun = params.RESTORE_DUMP_FILE.trim()
                         } else {
-                            // Check 4: Look for any .dump file in workspace or dumps folder
-                            def foundFiles = sh(
-                                script: 'find . -maxdepth 2 -name "*.dump" ! -name "pre_restore_safety_*.dump" | head -n 1',
+                            // 4. Auto-detect any .sql file in workspace
+                            def foundSql = sh(
+                                script: 'find . -maxdepth 2 -name "*.sql" | head -n 1',
                                 returnStdout: true
                             ).trim()
 
-                            if (foundFiles != '') {
-                                fileToRestore = foundFiles
-                                echo "Auto-detected dump file in workspace: ${fileToRestore}"
+                            if (foundSql != '') {
+                                scriptToRun = foundSql
                             } else {
-                                error("No dump file found! Please upload a file (DUMP_FILE_UPLOAD) or specify RESTORE_DUMP_FILE parameter.")
+                                error("No script provided! Please upload a .sql file, paste SQL text in SQL_QUERY_OR_SCRIPT, or specify SCRIPT_FILE_PATH.")
                             }
                         }
 
-                        echo "Executing restore with file: ${fileToRestore}"
-                        sh "chmod +x restore.sh && ./restore.sh '${fileToRestore}'"
+                        echo "Executing script '${scriptToRun}' on container '${params.CONTAINER_NAME}'..."
+                        sh "chmod +x run-script.sh && ./run-script.sh '${scriptToRun}'"
                     }
                 }
             }

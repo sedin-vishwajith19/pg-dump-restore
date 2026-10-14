@@ -1,41 +1,54 @@
-# PostgreSQL Backup & Script Runner Tool
+# PostgreSQL Backup & Script Runner Pipeline
 
-Simple, clean bash scripts and Jenkins pipeline to:
-1. **DUMP**: Create database backups from Docker container and download them.
-2. **RUN_SCRIPT**: Execute SQL scripts directly inside the PostgreSQL Docker container without dropping/wiping the entire database.
-
----
-
-## 📁 Repository Files
-
-- **`dump.sh`**: Dumps database from PostgreSQL Docker container and downloads it to workspace.
-- **`run-script.sh`**: Executes a `.sql` or `.sh` script directly inside the Docker container via `psql`.
-- **`restore.sh`**: Helper script supporting both script execution and full dump restores.
-- **`Jenkinsfile`**: Self-service pipeline for Jenkins.
+A clean, self-service Jenkins pipeline and automation scripts for developers to:
+1. **DUMP**: Export a database backup from the Docker container and download it directly from Jenkins.
+2. **RUN_SCRIPT**: Paste and execute SQL commands/queries directly inside the PostgreSQL Docker container without wiping or restoring the entire database.
 
 ---
 
-## 💻 Running Locally
+## 🔒 Security & Simplicity
 
-### 1. Take DB Dump:
+- **Zero Server Access for Devs:** Server credentials, SSH keys, host IPs, and container details are securely stored in the pipeline environment. Developers never see or need them.
+- **No File Uploads Needed:** Developers only select **`DUMP`** or **`RUN_SCRIPT`** and paste their SQL in a simple text area.
+
+---
+
+## 📋 Build Parameters in Jenkins
+
+When developers click **Build with Parameters**, they only see two fields:
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| **`ACTION`** | Choice | `DUMP` (Backup DB) or `RUN_SCRIPT` (Execute SQL) |
+| **`SQL_SCRIPT`** | Multi-line Text | Paste your SQL queries here (Only required for `RUN_SCRIPT`) |
+
+---
+
+## 🚀 How Developers Use It
+
+### 1. To Get a Database Dump:
+1. Open Jenkins job -> Click **Build with Parameters**.
+2. Select **`ACTION = DUMP`**.
+3. Click **Build**.
+4. Once completed, open the build page and download the `.dump` file from **Build Artifacts**.
+
+### 2. To Run a Script on the Database:
+1. Open Jenkins job -> Click **Build with Parameters**.
+2. Select **`ACTION = RUN_SCRIPT`**.
+3. Paste your SQL script in the **`SQL_SCRIPT`** text box (e.g., `UPDATE ...;`, `ALTER TABLE ...;`, or migrations).
+4. Click **Build**.
+5. Check the console output to view execution results and affected rows.
+
+---
+
+## 🛠️ CLI / Local Execution
+
+You can also run the scripts directly from the terminal if needed:
+
 ```bash
+# Take a backup dump:
 ./dump.sh
+
+# Run an SQL script inside the container:
+./run-script.sh my_query.sql
 ```
-
-### 2. Run SQL Script on Container:
-```bash
-./run-script.sh update_data.sql
-```
-
----
-
-## 🚀 Running in Jenkins
-
-### Action 1: `DUMP`
-- Takes a fresh PostgreSQL dump and archives it for download under Jenkins Build Artifacts.
-
-### Action 2: `RUN_SCRIPT`
-Executes SQL queries or scripts inside the container without touching the rest of the database:
-- **Option A (File Upload):** Upload a `.sql` file via `SCRIPT_FILE_UPLOAD`.
-- **Option B (Paste SQL):** Paste SQL statements directly into the `SQL_QUERY_OR_SCRIPT` text box.
-- **Option C (File Path):** Specify a script path in `SCRIPT_FILE_PATH`.

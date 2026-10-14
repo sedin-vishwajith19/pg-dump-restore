@@ -3,14 +3,9 @@ set -euo pipefail
 
 SCRIPT_FILE="${1:-}"
 
-if [ -z "$SCRIPT_FILE" ]; then
-  echo "Error: No script file specified!"
-  echo "Usage: $0 <script_file.sql_or_sh>"
-  exit 1
-fi
-
-if [ ! -f "$SCRIPT_FILE" ]; then
-  echo "Error: Script file '$SCRIPT_FILE' not found!"
+if [ -z "$SCRIPT_FILE" ] || [ ! -f "$SCRIPT_FILE" ]; then
+  echo "Error: SQL script file '$SCRIPT_FILE' not found!"
+  echo "Usage: $0 <script.sql>"
   exit 1
 fi
 
@@ -27,29 +22,8 @@ fi
 
 SSH_OPTS="${SSH_KEY_ARG} -o StrictHostKeyChecking=no -o ConnectTimeout=10"
 
-echo "==> Target Server    : ${SERVER_USER}@${SERVER_HOST}"
-echo "==> Target Container : ${CONTAINER_NAME}"
-echo "==> Target Database  : ${DB_NAME} (User: ${DB_USER})"
-echo "==> Script File      : ${SCRIPT_FILE}"
+echo "==> Executing SQL script inside container '${CONTAINER_NAME}' on '${SERVER_HOST}'..."
+ssh ${SSH_OPTS} "${SERVER_USER}@${SERVER_HOST}" \
+  "docker exec -i '${CONTAINER_NAME}' psql -U '${DB_USER}' -d '${DB_NAME}' -v ON_ERROR_STOP=1" < "$SCRIPT_FILE"
 
-echo "==> [1/2] Verifying Docker container status on remote server..."
-ssh ${SSH_OPTS} "${SERVER_USER}@${SERVER_HOST}" bash -s -- "$CONTAINER_NAME" <<'REMOTE'
-set -euo pipefail
-CONTAINER_NAME="$1"
-if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-  echo "Error: Container '${CONTAINER_NAME}' is not running on target server!"
-  exit 1
-fi
-echo "Container '${CONTAINER_NAME}' is running."
-REMOTE
-
-echo "==> [2/2] Executing script inside container '${CONTAINER_NAME}'..."
-if [[ "$SCRIPT_FILE" == *.sh ]]; then
-  ssh ${SSH_OPTS} "${SERVER_USER}@${SERVER_HOST}" \
-    "docker exec -i '${CONTAINER_NAME}' bash -s" < "$SCRIPT_FILE"
-else
-  ssh ${SSH_OPTS} "${SERVER_USER}@${SERVER_HOST}" \
-    "docker exec -i '${CONTAINER_NAME}' psql -U '${DB_USER}' -d '${DB_NAME}' -v ON_ERROR_STOP=1" < "$SCRIPT_FILE"
-fi
-
-echo "==> Script executed successfully!"
+echo "==> SQL script executed successfully!"

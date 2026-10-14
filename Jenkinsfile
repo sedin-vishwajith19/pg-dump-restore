@@ -32,6 +32,7 @@ pipeline {
                 expression { return params.ACTION == 'DUMP' }
             }
             steps {
+                echo "Current workspace: ${env.WORKSPACE}"
                 withCredentials([sshUserPrivateKey(credentialsId: env.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY_PATH')]) {
                     sh "chmod +x dump.sh && ./dump.sh"
                 }
@@ -46,6 +47,7 @@ pipeline {
             steps {
                 withCredentials([sshUserPrivateKey(credentialsId: env.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY_PATH')]) {
                     script {
+                        echo "Current workspace: ${env.WORKSPACE}"
                         if (!params.SQL_SCRIPT || params.SQL_SCRIPT.trim() == '') {
                             error("No SQL script provided! Please paste your SQL queries in the SQL_SCRIPT area.")
                         }
